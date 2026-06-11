@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and this p
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixes AI requests to Anthropic failing with a 400 error when the prompt includes a `system`-role message &mdash; notably the _Commit Graph_'s AI _Compose_ mode, which always failed against Anthropic models; the system prompt is now hoisted into Anthropic's top-level `system` parameter
+
 ## [18.1.0] - 2026-06-09
 
 ### Added
