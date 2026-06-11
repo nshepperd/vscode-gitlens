@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/) and this p
 ### Fixed
 
 - Fixes AI requests to Anthropic failing with a 400 error when the prompt includes a `system`-role message &mdash; notably the _Commit Graph_'s AI _Compose_ mode, which always failed against Anthropic models; the system prompt is now hoisted into Anthropic's top-level `system` parameter
+- Fixes the _Commit Graph_'s AI _Compose_ mode failing with `Hunk index N not found` when applying a plan with excluded files &mdash; the plan is generated in a dense, post-exclusion index space while apply matched against absolute pre-exclusion indices; exclusions also silently mis-mapped hunks in the plan preview
+- Fixes the _Commit Graph_'s AI _Compose_ mode silently discarding an excluded untracked file when applying a plan &mdash; untracked files live in a stash's third parent, which the post-apply stash-restore equivalence check ignored, dropping the stash holding the file's only copy
+- Fixes the _Commit Graph_'s AI _Compose_ mode reporting a spurious stash conflict (leaving a stale `gitlens-compose-` stash behind) when stashed staged changes were committed by the compose
 
 ## [18.1.0] - 2026-06-09
 

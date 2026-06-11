@@ -37,6 +37,7 @@ overrides:
 packageExtensionsChecksum: sha256-9vbX1SyBevR33D0TKDBFX7oWZ208wUEROIF0H2ZNUB4=
 
 patchedDependencies:
+  '@gitkraken/compose-tools@0.3.1': 8084e8a1cbdc33db7b0bbc1a73cf67e69db7725ccc5beb418aaec56f5424261d
   fantasticon@4.1.0: 305553b0f6e028d1e95761a804e3da3f8a572bbe21681ad7b18166ec77c017c7
 
 importers:
@@ -57,7 +58,7 @@ importers:
         version: 0.0.6(signal-polyfill@0.2.2)
       '@gitkraken/compose-tools':
         specifier: 0.3.1
-        version: 0.3.1
+        version: 0.3.1(patch_hash=8084e8a1cbdc33db7b0bbc1a73cf67e69db7725ccc5beb418aaec56f5424261d)
       '@gitkraken/gitkraken-components':
         specifier: 13.0.0-vnext.36
         version: 13.0.0-vnext.36(dragula@3.7.3)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -350,6 +351,9 @@ importers:
       mini-css-extract-plugin:
         specifier: 2.10.2
         version: 2.10.2(webpack@5.107.2)
+      mocha:
+        specifier: 'catalog:'
+        version: 11.7.6
       ovsx:
         specifier: 1.0.0
         version: 1.0.0
@@ -395,6 +399,9 @@ importers:
       ts-loader:
         specifier: 9.5.7
         version: 9.5.7(typescript@6.0.3)(webpack@5.107.2)
+      tsx:
+        specifier: 'catalog:'
+        version: 4.22.3
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -7686,7 +7693,7 @@ snapshots:
 
   '@github/catalyst@1.8.1': {}
 
-  '@gitkraken/compose-tools@0.3.1':
+  '@gitkraken/compose-tools@0.3.1(patch_hash=8084e8a1cbdc33db7b0bbc1a73cf67e69db7725ccc5beb418aaec56f5424261d)':
     dependencies:
       '@gitkraken/shared-tools': 0.2.0
       zod: 4.4.3

@@ -70,4 +70,5 @@ packageExtensions:
             '@types/react-dom': '*'
 
 patchedDependencies:
+    '@gitkraken/compose-tools@0.3.1': patches/@gitkraken__compose-tools@0.3.1.patch
     fantasticon@4.1.0: patches/fantasticon@4.1.0.patch
