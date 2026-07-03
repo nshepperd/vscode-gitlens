@@ -1,6 +1,7 @@
 /* oxlint-disable no-restricted-globals */
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 export class GitFixture {
@@ -82,6 +83,11 @@ export class GitFixture {
 		await this.git('commit', undefined, '-m', message);
 	}
 
+	/** Commit whatever is currently staged, without touching any files. */
+	async commitStaged(message: string): Promise<void> {
+		await this.git('commit', undefined, '-m', message);
+	}
+
 	/**
 	 * Create a file with content (without staging)
 	 * @param fileName File name relative to repo root
@@ -89,7 +95,114 @@ export class GitFixture {
 	 */
 	async createFile(fileName: string, content: string): Promise<void> {
 		const filePath = path.join(this.repoPath, fileName);
+		await fs.mkdir(path.dirname(filePath), { recursive: true });
 		await fs.writeFile(filePath, content);
+	}
+
+	/**
+	 * Create or overwrite a binary file with the given bytes (without staging).
+	 * @param fileName File name relative to repo root
+	 * @param bytes Raw file content
+	 */
+	async createBinaryFile(fileName: string, bytes: Buffer): Promise<void> {
+		const filePath = path.join(this.repoPath, fileName);
+		await fs.mkdir(path.dirname(filePath), { recursive: true });
+		await fs.writeFile(filePath, bytes);
+	}
+
+	/**
+	 * Delete a file from the working tree.
+	 * @param fileName File name relative to repo root
+	 */
+	async deleteFile(fileName: string): Promise<void> {
+		await fs.rm(path.join(this.repoPath, fileName), { force: true });
+	}
+
+	/** Read a working-tree file as UTF-8 text. */
+	async readFile(fileName: string): Promise<string> {
+		return fs.readFile(path.join(this.repoPath, fileName), 'utf-8');
+	}
+
+	/** Read a working-tree file as raw bytes (for binary content assertions). */
+	async readBinaryFile(fileName: string): Promise<Buffer> {
+		return fs.readFile(path.join(this.repoPath, fileName));
+	}
+
+	/** Read the content of a file as it exists at a given commit/ref (exact bytes, untrimmed). */
+	async readFileAtRef(fileName: string, ref: string = 'HEAD'): Promise<string> {
+		return (await this.gitBuffer('show', `${ref}:${fileName}`)).toString('utf8');
+	}
+
+	/** Read the raw bytes of a file as it exists at a given commit/ref. */
+	async readBinaryFileAtRef(fileName: string, ref: string = 'HEAD'): Promise<Buffer> {
+		return this.gitBuffer('show', `${ref}:${fileName}`);
+	}
+
+	/** Stage all changes (tracked, untracked, and deletions). */
+	async stageAll(): Promise<void> {
+		await this.git('add', undefined, '-A');
+	}
+
+	/**
+	 * Get porcelain status (machine-readable working-tree state). Empty string means clean.
+	 * Uses a raw read so the 2-column status prefix (e.g. the leading space in ` M file`) is
+	 * preserved; only the trailing newline is stripped.
+	 */
+	async status(): Promise<string> {
+		return (await this.gitBuffer('status', '--porcelain')).toString('utf8').replace(/\n$/, '');
+	}
+
+	/** Whether the working tree (tracked + staged) is clean. */
+	async isClean(): Promise<boolean> {
+		return (await this.status()).length === 0;
+	}
+
+	/** Get the commit subjects (first line) reachable from `ref`, newest first. */
+	async log(ref: string = 'HEAD'): Promise<string[]> {
+		const out = await this.git('log', undefined, '--format=%s', ref);
+		return out ? out.split('\n') : [];
+	}
+
+	/** Count commits reachable from `ref`, optionally restricted to those whose message matches `grep`. */
+	async countCommits(options?: { grep?: string; ref?: string }): Promise<number> {
+		const args = ['--count'];
+		if (options?.grep) {
+			args.push(`--grep=${options.grep}`);
+		}
+		args.push(options?.ref ?? 'HEAD');
+		const out = await this.git('rev-list', undefined, ...args);
+		return Number.parseInt(out.trim(), 10) || 0;
+	}
+
+	/** Resolve a ref to its full SHA. */
+	async revParse(ref: string = 'HEAD'): Promise<string> {
+		return (await this.git('rev-parse', undefined, ref)).trim();
+	}
+
+	/** The committed tree sha at `ref`. */
+	async headTree(ref: string = 'HEAD'): Promise<string> {
+		return (await this.git('rev-parse', undefined, `${ref}^{tree}`)).trim();
+	}
+
+	/** The current index (staged) tree sha. `write-tree` is read-only on the index. */
+	async indexTree(): Promise<string> {
+		return (await this.git('write-tree')).trim();
+	}
+
+	/**
+	 * The materialized working-tree tree sha: stages the entire working directory (tracked content +
+	 * untracked files, honoring .gitignore) into a throwaway index and writes its tree, capturing
+	 * exactly what's on disk without disturbing the real index or HEAD.
+	 */
+	async materializedTree(): Promise<string> {
+		const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'gl-mat-'));
+		const indexFile = path.join(dir, 'index');
+		try {
+			await this.git('add', { env: { GIT_INDEX_FILE: indexFile } }, '-A');
+			return (await this.git('write-tree', { env: { GIT_INDEX_FILE: indexFile } })).trim();
+		} finally {
+			await fs.rm(dir, { recursive: true, force: true });
+		}
 	}
 
 	/**
@@ -349,6 +462,12 @@ export class GitFixture {
 		await this.git('stash', undefined, ...args);
 	}
 
+	/** Entries in the stash stack (one per line, e.g. `stash@{0}: ...`); empty when there are none. */
+	async stashList(): Promise<string[]> {
+		const out = await this.git('stash', undefined, 'list');
+		return out ? out.split('\n').filter(l => l.trim().length > 0) : [];
+	}
+
 	/**
 	 * Create a tag at the current HEAD or specified ref
 	 * @param name Tag name
@@ -376,10 +495,17 @@ export class GitFixture {
 		await this.git('worktree', undefined, 'prune');
 	}
 
-	private async git(command: string, options?: { configs?: string[] }, ...args: string[]): Promise<string> {
+	private async git(
+		command: string,
+		options?: { configs?: string[]; env?: Record<string, string> },
+		...args: string[]
+	): Promise<string> {
 		const fullArgs = [...(options?.configs ?? []), command, ...args];
 		return new Promise((resolve, reject) => {
-			const child = spawn('git', fullArgs, { cwd: this.repoPath, env: process.env });
+			const child = spawn('git', fullArgs, {
+				cwd: this.repoPath,
+				env: options?.env ? { ...process.env, ...options.env } : process.env,
+			});
 
 			let stdout = '';
 			child.stdout.on('data', (data: string | Buffer) => (stdout += data.toString()));
@@ -390,6 +516,28 @@ export class GitFixture {
 			child.on('close', code => {
 				if (code === 0) {
 					resolve(stdout.trim());
+				} else {
+					reject(new Error(`Git command failed: git ${fullArgs.join(' ')}\n${stderr}`));
+				}
+			});
+		});
+	}
+
+	/** Like {@link git} but returns raw stdout bytes (no decode/trim) — required for binary content. */
+	private async gitBuffer(command: string, ...args: string[]): Promise<Buffer> {
+		const fullArgs = [command, ...args];
+		return new Promise((resolve, reject) => {
+			const child = spawn('git', fullArgs, { cwd: this.repoPath, env: process.env });
+
+			const chunks: Buffer[] = [];
+			child.stdout.on('data', (data: Buffer) => chunks.push(data));
+
+			let stderr = '';
+			child.stderr.on('data', (data: string | Buffer) => (stderr += data.toString()));
+
+			child.on('close', code => {
+				if (code === 0) {
+					resolve(Buffer.concat(chunks));
 				} else {
 					reject(new Error(`Git command failed: git ${fullArgs.join(' ')}\n${stderr}`));
 				}
