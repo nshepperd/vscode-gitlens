@@ -31,7 +31,7 @@ export class GitLensPage extends VSCodePage {
 	 */
 	async startSubscriptionSimulation(
 		state: SimulationState = { state: 6 /*SubscriptionState.Paid*/, planId: 'pro' },
-	): Promise<{ success: boolean } & Disposable> {
+	): Promise<{ success: boolean } & Disposable & AsyncDisposable> {
 		if (!(await this.waitForCommand('gitlens.plus.simulate.subscription'))) {
 			throw new Error('gitlens.plus.simulate.subscription command not found');
 		}
@@ -42,6 +42,11 @@ export class GitLensPage extends VSCodePage {
 		return {
 			success: success,
 			[Symbol.dispose]: async () => {
+				await this.stopSubscriptionSimulation();
+			},
+			// Prefer `await using`: the sync form fires-and-forgets, so a straggling disable can land
+			// during a subsequent test's simulation
+			[Symbol.asyncDispose]: async () => {
 				await this.stopSubscriptionSimulation();
 			},
 		};
@@ -64,7 +69,7 @@ export class GitLensPage extends VSCodePage {
 	 */
 	async startAISimulation(
 		mode: 'default' | 'slow' | 'invalid' | 'error' | 'cancel' | 'quota' = 'default',
-	): Promise<{ success: boolean } & Disposable> {
+	): Promise<{ success: boolean } & Disposable & AsyncDisposable> {
 		if (!(await this.waitForCommand('gitlens.plus.simulate.ai'))) {
 			throw new Error('gitlens.plus.simulate.ai command not found (is this a --debug build?)');
 		}
@@ -78,6 +83,11 @@ export class GitLensPage extends VSCodePage {
 		return {
 			success: success,
 			[Symbol.dispose]: async () => {
+				await this.stopAISimulation();
+			},
+			// Prefer `await using`: the sync form fires-and-forgets, so a straggling disable can land
+			// during a subsequent test's simulation
+			[Symbol.asyncDispose]: async () => {
 				await this.stopAISimulation();
 			},
 		};
