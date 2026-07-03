@@ -8,15 +8,20 @@ import { configuration } from '../../../../system/-webview/configuration.js';
 import type { ComposeProgressUpdate, ScopeSelection } from '../graphService.js';
 
 /**
- * Detects whether the AI simulator is currently active. The simulator gates compose's
- * dedicated bypass path so production behaviour is unchanged when no simulator is in play.
+ * Whether the graph compose should use the dedicated lightweight bypass instead of the real
+ * compose-tools pipeline. Production behaviour is unchanged when no simulator is in play.
  *
- * Active iff `ai.model` is configured as `simulator:<mode>` (the simulator command sets
- * this when enabled and clears it on disable — see `__debug__aiSimulator.ts`).
+ * The bypass is used iff the AI simulator is active (`ai.model` === `simulator:<mode>`) AND no
+ * deterministic plan strategy is set. When a plan strategy IS set (via `gitlens.plus.simulate.ai`
+ * `plan`), the simulator can synthesize valid compose-tools responses from the real hunks, so we
+ * run the REAL pipeline instead — letting tests exercise generate + apply end-to-end. The bypass
+ * remains only for AI-free UI/screenshot testing (no strategy → no real plan to render).
  */
-export function isComposeSimulatorActive(): boolean {
+export function shouldUseComposeSimulatorBypass(): boolean {
 	const model = configuration.get('ai.model');
-	return typeof model === 'string' && model.startsWith('simulator:');
+	if (typeof model !== 'string' || !model.startsWith('simulator:')) return false;
+
+	return getSimulatorState().planStrategy == null;
 }
 
 /**

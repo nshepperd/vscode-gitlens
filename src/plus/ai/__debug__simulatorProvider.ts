@@ -3,7 +3,11 @@ import type { AIActionType, AIModel } from '@gitlens/ai/models/model.js';
 import type { AIChatMessage, AIProvider, AIProviderResponse } from '@gitlens/ai/models/provider.js';
 import { CancellationError } from '@gitlens/utils/cancellation.js';
 import { uuid } from '@gitlens/utils/crypto.js';
-import { getDefaultResponse, getInvalidResponse } from './__debug__simulatorResponses.js';
+import {
+	getDefaultResponse,
+	getInvalidResponse,
+	synthesizeGenerateCommitsResponse,
+} from './__debug__simulatorResponses.js';
 import { getSimulatorState } from './__debug__simulatorState.js';
 
 const simulatorProviderDescriptor = { id: 'simulator' as const, name: 'Simulator (Debugging)' };
@@ -111,9 +115,20 @@ export class SimulatorProvider implements AIProvider<'simulator'> {
 			await delay(state.slowDelayMs, options.signal);
 		}
 
-		// Layered resolution: injects > mode override > built-in default.
+		// Layered resolution: injects > invalid override > synthesized plan > built-in default.
 		const injected = state.pop(action);
-		const content = injected ?? (mode === 'invalid' ? getInvalidResponse(action) : getDefaultResponse(action));
+		let content: string;
+		if (injected != null) {
+			content = injected;
+		} else if (mode === 'invalid') {
+			content = getInvalidResponse(action);
+		} else if (action === 'generate-commits' && state.planStrategy != null) {
+			content =
+				synthesizeGenerateCommitsResponse(messages, state.planStrategy, state.planTag) ??
+				getDefaultResponse(action);
+		} else {
+			content = getDefaultResponse(action);
+		}
 
 		const promptTokens = messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
 		const completionTokens = Math.ceil(content.length / 4);

@@ -295,7 +295,7 @@ import type { ChoosePathParams, DidChoosePathParams } from '../timeline/protocol
 import type { TimelineCommandArgs } from '../timeline/registration.js';
 import { buildTimelineDataset } from '../timeline/timelineDataset.js';
 import type { GraphComposeIntegration } from './compose/integration.js';
-import { isComposeSimulatorActive, runSimulatedComposeChanges } from './compose/simulator.js';
+import { runSimulatedComposeChanges, shouldUseComposeSimulatorBypass } from './compose/simulator.js';
 import {
 	checkForAbandonedComposeStashes,
 	executeComposeCommit,
@@ -1922,16 +1922,20 @@ export class GraphWebviewProvider implements WebviewProvider<State, State, Graph
 
 						const svc = this.container.git.getRepositoryService(repoPath);
 
-						// AI simulator bypass — `compose-tools`' validators reject synthetic AI
-						// responses (they require real diff-hunk indices), so the simulator can't
-						// drive a successful compose end-to-end through the real pipeline. When the
-						// simulator is active we synthesize a `planResult` from the working tree
-						// directly and reuse the same downstream conversion + virtual session wiring.
-						// `commitCompose` is intentionally out of scope (no cache key is registered);
-						// the bypass surfaces "No active compose plan" if the user tries to commit.
+						// AI simulator bypass — for AI-free UI/screenshot testing we synthesize a
+						// `planResult` from the working tree directly (no real pipeline), reusing the
+						// same downstream conversion + virtual session wiring. `commitCompose` is
+						// intentionally out of scope (no cache key is registered); the bypass surfaces
+						// "No active compose plan" if the user tries to commit.
+						//
+						// The bypass is skipped when a deterministic plan strategy is set
+						// (`gitlens.plus.simulate.ai` `plan`): the simulator can then synthesize valid
+						// compose-tools responses from the real hunks, so the REAL pipeline runs and
+						// generate + apply can be exercised end-to-end.
+						//
 						// Gated on DEBUG so the bypass is unreachable in production builds even if a
 						// user manually flips `gitlens.ai.model` to `simulator:*` in settings.json.
-						const simulated = DEBUG && isComposeSimulatorActive();
+						const simulated = DEBUG && shouldUseComposeSimulatorBypass();
 
 						const composeTools = simulated ? undefined : await this.getOrCreateComposeToolsForGraph();
 						if (!simulated && composeTools == null) {
