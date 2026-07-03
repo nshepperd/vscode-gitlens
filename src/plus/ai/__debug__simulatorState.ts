@@ -3,6 +3,13 @@ import type { AIChatMessage } from '@gitlens/ai/models/provider.js';
 
 export type SimulatorMode = 'default' | 'slow' | 'invalid' | 'error' | 'cancel' | 'quota';
 
+/**
+ * Deterministic strategies for synthesizing a `generate-commits` response from the actual hunks
+ * in the request prompt. Lets tests choose how hunks are distributed across commits without
+ * hand-crafting a response that mirrors the (test-specific) hunk indices.
+ */
+export type PlanStrategy = 'separate' | 'together' | 'by-file' | 'split-file';
+
 export interface SimulatorInject {
 	readonly action?: AIActionType;
 	readonly content: string;
@@ -12,6 +19,11 @@ export interface SimulatorInject {
 export class SimulatorState {
 	mode: SimulatorMode = 'default';
 	slowDelayMs = 1500;
+	/** When set, `generate-commits` responses are synthesized from the prompt's hunks using this strategy. */
+	planStrategy: PlanStrategy | undefined;
+	/** Optional marker embedded as a trailer in every synthesized commit message, so tests can
+	 * `git log --grep` the resulting commits by an unambiguous, per-scenario token. */
+	planTag: string | undefined;
 
 	private readonly actionStash = new Map<AIActionType, string[]>();
 	private readonly nextStash: string[] = [];

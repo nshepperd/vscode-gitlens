@@ -10,17 +10,21 @@ import { registerCommand } from '../../system/-webview/command.js';
 import { configuration } from '../../system/-webview/configuration.js';
 import type { OnboardingSnapshot } from '../__debug__onboardingHelper.js';
 import { dismissAllOnboarding, restoreOnboarding } from '../__debug__onboardingHelper.js';
-import type { SimulatorMode } from './__debug__simulatorState.js';
+import type { PlanStrategy, SimulatorMode } from './__debug__simulatorState.js';
 import { getSimulatorState } from './__debug__simulatorState.js';
 
 export type SimulateAIArgs =
 	| { op: 'enable'; mode?: SimulatorMode; dismissOnboarding?: boolean }
 	| { op: 'disable' }
 	| { op: 'inject'; action?: AIActionType; content: string; sticky?: boolean }
+	// Synthesize `generate-commits` responses from the prompt's actual hunks. `strategy: null`
+	// clears it. `tag` (optional) is embedded as a trailer in each commit message for git-log greps.
+	| { op: 'plan'; strategy: PlanStrategy | null; tag?: string }
 	| { op: 'clear' }
 	| { op: 'lastMessages' };
 
 type InjectArgs = Extract<SimulateAIArgs, { op: 'inject' }>;
+type PlanArgs = Extract<SimulateAIArgs, { op: 'plan' }>;
 
 export function registerAISimulator(container: Container): void {
 	new AISimulatorDebug(container);
@@ -67,6 +71,8 @@ class AISimulatorDebug {
 				return false;
 			case 'inject':
 				return this.handleInject(args);
+			case 'plan':
+				return this.handlePlan(args);
 			case 'clear':
 				return this.handleClear();
 			case 'lastMessages':
@@ -78,6 +84,13 @@ class AISimulatorDebug {
 		if (typeof args.content !== 'string') return false;
 
 		getSimulatorState().inject({ action: args.action, content: args.content, sticky: args.sticky });
+		return true;
+	}
+
+	private handlePlan(args: PlanArgs): boolean {
+		const state = getSimulatorState();
+		state.planStrategy = args.strategy ?? undefined;
+		state.planTag = args.tag;
 		return true;
 	}
 
@@ -126,6 +139,8 @@ class AISimulatorDebug {
 		const state = getSimulatorState();
 		state.clear();
 		state.mode = 'default';
+		state.planStrategy = undefined;
+		state.planTag = undefined;
 
 		const snapshot = this.active;
 		this.active = undefined;
