@@ -1,7 +1,15 @@
 import type { FrameLocator, Locator } from '@playwright/test';
+import type { PlanStrategy } from '../../../src/plus/ai/__debug__simulatorState.js';
 import type { SimulationState } from '../../../src/plus/gk/__debug__accountDebug.js';
+import type { ComposerCommandArgs } from '../../../src/webviews/plus/composer/registration.js';
 import { MaxTimeout, ShortTimeout } from '../baseTest.js';
 import { VSCodePage } from './vscodePage.js';
+
+/** Minimal shape of an AI chat message as returned by the simulator's `lastMessages` op. */
+export interface SimulatedAIMessage {
+	role: string;
+	content: string;
+}
 
 /**
  * Page object for GitLens-specific UI interactions.
@@ -41,6 +49,73 @@ export class GitLensPage extends VSCodePage {
 
 	async stopSubscriptionSimulation(): Promise<void> {
 		await this.executeCommand('gitlens.plus.simulate.subscription', { state: null });
+	}
+
+	// ============================================================================
+	// AI Simulator (debug-only `gitlens.plus.simulate.ai`)
+	// ============================================================================
+
+	/**
+	 * Enable the AI simulator so AI flows (e.g. the composer) resolve deterministically without a
+	 * real provider or API key. Also stubs the AI ToS/onboarding gates. Auto-disables on scope exit.
+	 *
+	 * @param mode - Simulator behavior: 'default' (canned/synthesized), 'slow', 'invalid', 'error',
+	 *   'cancel', or 'quota'.
+	 */
+	async startAISimulation(
+		mode: 'default' | 'slow' | 'invalid' | 'error' | 'cancel' | 'quota' = 'default',
+	): Promise<{ success: boolean } & Disposable> {
+		if (!(await this.waitForCommand('gitlens.plus.simulate.ai'))) {
+			throw new Error('gitlens.plus.simulate.ai command not found (is this a --debug build?)');
+		}
+
+		const success = await this.executeCommand<boolean>('gitlens.plus.simulate.ai', {
+			op: 'enable',
+			mode: mode,
+			dismissOnboarding: true,
+		});
+		await this.page.waitForTimeout(ShortTimeout);
+		return {
+			success: success,
+			[Symbol.dispose]: async () => {
+				await this.stopAISimulation();
+			},
+		};
+	}
+
+	async stopAISimulation(): Promise<void> {
+		await this.executeCommand('gitlens.plus.simulate.ai', { op: 'disable' });
+	}
+
+	/**
+	 * Make `generate-commits` responses be synthesized from the prompt's real hunks using a strategy.
+	 * @param strategy - How to distribute hunks across commits, or `null` to clear.
+	 * @param tag - Optional marker embedded as a `Simulated-Plan: <tag>` trailer in every commit
+	 *   message, so tests can `git log --grep=<tag>` for an exact composed-commit count.
+	 */
+	async setComposerPlan(strategy: PlanStrategy | null, tag?: string): Promise<void> {
+		await this.executeCommand('gitlens.plus.simulate.ai', { op: 'plan', strategy: strategy, tag: tag });
+	}
+
+	/** Read back the messages sent to the AI on the most recent request (for prompt-content asserts). */
+	async getLastAIMessages(): Promise<SimulatedAIMessage[] | undefined> {
+		return this.executeCommand<SimulatedAIMessage[] | undefined>('gitlens.plus.simulate.ai', {
+			op: 'lastMessages',
+		});
+	}
+
+	// ============================================================================
+	// Commit Composer
+	// ============================================================================
+
+	/** Open the Commit Composer webview panel for the given repo/scope. */
+	async openComposer(args?: ComposerCommandArgs): Promise<void> {
+		await this.executeCommand('gitlens.showComposerPage', undefined, args);
+	}
+
+	/** The Commit Composer webview panel (editor tab), or null if not open. */
+	async getComposerWebview(): Promise<FrameLocator | null> {
+		return this.getGitLensWebview('Commit Composer', 'webviewPanel');
 	}
 
 	/**
