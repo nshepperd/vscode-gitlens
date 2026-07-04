@@ -41,6 +41,7 @@ overrides:
 packageExtensionsChecksum: sha256-9vbX1SyBevR33D0TKDBFX7oWZ208wUEROIF0H2ZNUB4=
 
 patchedDependencies:
+  '@gitkraken/compose-tools@0.4.0': 73ff27438bf753fe0861f3be322d9d34c4ef19f2f066948d63eed178832dc723
   fantasticon@4.1.0: 305553b0f6e028d1e95761a804e3da3f8a572bbe21681ad7b18166ec77c017c7
 
 importers:
@@ -64,7 +65,7 @@ importers:
         version: 0.0.6(signal-polyfill@0.2.2)
       '@gitkraken/compose-tools':
         specifier: 0.4.0
-        version: 0.4.0
+        version: 0.4.0(patch_hash=73ff27438bf753fe0861f3be322d9d34c4ef19f2f066948d63eed178832dc723)
       '@gitkraken/conflict-tools':
         specifier: 0.2.2
         version: 0.2.2
@@ -7760,7 +7761,7 @@ snapshots:
 
   '@github/catalyst@1.8.1': {}
 
-  '@gitkraken/compose-tools@0.4.0':
+  '@gitkraken/compose-tools@0.4.0(patch_hash=73ff27438bf753fe0861f3be322d9d34c4ef19f2f066948d63eed178832dc723)':
     dependencies:
       '@gitkraken/shared-tools': 0.2.0
       zod: 4.4.3
