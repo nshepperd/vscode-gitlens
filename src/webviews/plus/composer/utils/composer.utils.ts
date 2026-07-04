@@ -279,6 +279,33 @@ export function getAuthorAndCoAuthorsForCombinedDiffHunk(
 	return { author: primaryAuthor, coAuthors: [...coAuthors.values()] };
 }
 
+/**
+ * Rewrites a rename-carrying diff header into a plain modification of the renamed (new) path.
+ * A rename can only be applied once: when a renamed file's hunks are split across multiple commits,
+ * only the first commit (in apply order) may carry the `rename from`/`rename to` lines — later
+ * commits' patches must target the already-renamed file, or `git apply` fails with
+ * "<old path> does not exist in index" and the whole apply aborts.
+ */
+function rewriteRenameHeaderAsModify(diffHeader: string, fileName: string): string {
+	const lines: string[] = [];
+	for (const line of diffHeader.split('\n')) {
+		if (line.startsWith('diff --git ')) {
+			lines.push(`diff --git a/${fileName} b/${fileName}`);
+		} else if (
+			line.startsWith('similarity index') ||
+			line.startsWith('rename from') ||
+			line.startsWith('rename to')
+		) {
+			continue;
+		} else if (line.startsWith('--- a/')) {
+			lines.push(`--- a/${fileName}`);
+		} else {
+			lines.push(line);
+		}
+	}
+	return lines.join('\n');
+}
+
 export function convertToComposerDiffInfo(
 	commits: ComposerCommit[],
 	hunks: ComposerHunk[],
@@ -289,9 +316,21 @@ export function convertToComposerDiffInfo(
 	patch: string;
 	author?: GitCommitIdentityShape;
 }> {
+	// Diff headers already emitted by an EARLIER commit's patch. The per-commit patches are applied
+	// sequentially, so a rename header repeated by a later commit must be downgraded to a plain
+	// modification of the new path (see rewriteRenameHeaderAsModify).
+	const appliedHeaders = new Set<string>();
 	return commits.map(commit => {
-		const { patch, filePatches } = createCombinedDiffForCommit(getHunksForCommit(commit, hunks));
-		const commitHunks = getHunksForCommit(commit, hunks);
+		const commitHunks = getHunksForCommit(commit, hunks).map(hunk => {
+			if (!appliedHeaders.has(hunk.diffHeader) || !/^rename (from|to) /m.test(hunk.diffHeader)) {
+				return hunk;
+			}
+			return { ...hunk, diffHeader: rewriteRenameHeaderAsModify(hunk.diffHeader, hunk.fileName) };
+		});
+		for (const hunk of getHunksForCommit(commit, hunks)) {
+			appliedHeaders.add(hunk.diffHeader);
+		}
+		const { patch, filePatches } = createCombinedDiffForCommit(commitHunks);
 		const { author, coAuthors } = getAuthorAndCoAuthorsForCommit(commitHunks);
 		let message = commit.message.content;
 		if (coAuthors.length > 0) {
