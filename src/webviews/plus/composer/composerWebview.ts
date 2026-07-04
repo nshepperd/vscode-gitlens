@@ -1858,59 +1858,26 @@ export class ComposerWebviewProvider implements WebviewProvider<State, State, Co
 				return;
 			}
 
-			// Capture previous stash state
-			let previousStashCommit;
-			let stash;
-			let stashCommit;
-			let stashedSuccessfully = false;
-			const hasWorkingChanges = await repo.git.status.hasWorkingChanges({ throwOnError: true });
-			if (hasWorkingChanges) {
-				stash = await svc.stash?.getStash();
-				if (stash?.stashes.size) {
-					const latestStash = stash.stashes.values().next().value;
-					if (latestStash) {
-						previousStashCommit = latestStash;
-					}
-				}
-
-				// Stash the working changes
-				const stashMessage = `Commit composer: ${new Date().toLocaleString()}`;
-				await svc.stash?.saveStash(stashMessage, undefined, { includeUntracked: true });
-
-				// Get the new stash reference
-				stash = await svc.stash?.getStash();
-				if (stash?.stashes.size) {
-					stashCommit = stash.stashes.values().next().value;
-					if (
-						stashCommit &&
-						stashCommit.ref !== previousStashCommit?.ref &&
-						stashCommit.message?.includes(stashMessage)
-					) {
-						stashedSuccessfully = true;
-					}
-				}
-			}
-
 			// Check if we're in branch mode
 			if (this._recompose?.enabled && this._recompose.branchName) {
-				// Branch mode: update the specific branch to point to the new commits
-				// Use git update-ref to update the branch reference directly
+				// Branch mode (recompose) — pure ref move. `validateResultingDiff` above guarantees the
+				// rewrite is tree-preserving (the new tip's total diff matches the old), so pointing the
+				// branch at the new commits is sufficient even when the recomposed branch is checked
+				// out: HEAD's tree is unchanged, and `git status` — including the staged/unstaged
+				// split — is byte-for-byte identical afterward. The index and working tree are never
+				// touched, so there is no stash round-trip (and no stash-pop conflict) to go wrong.
 				await repo.git.refs.updateReference(`refs/heads/${this._recompose.branchName}`, shas.at(-1)!);
 			} else {
-				// Working directory mode: reset the current branch to the new shas
-				await svc.ops?.reset(shas.at(-1)!, { mode: 'hard' });
-			}
-
-			// Pop the stash we created to restore what is left in the working tree, preserving
-			// the original staged/unstaged split so the user's pre-composer workspace round-trips.
-			if (stashCommit && stashedSuccessfully) {
-				const stashResult = await svc.stash?.applyStash(stashCommit.stashName, {
-					deleteAfter: true,
-					index: true,
-				});
-				if (stashResult?.conflicted) {
-					void window.showInformationMessage('Stash applied with conflicts');
-				}
+				// Working-directory mode — ref-move apply: the new commits were built ref-only
+				// (createUnreachableCommitsFromPatches, off the base) and the working tree already
+				// holds every hunk (both the ones we just committed and any left unassigned). So
+				// applying is purely moving HEAD's branch onto the new commits and re-baselining the
+				// index with a *mixed* reset (not hard) — the working tree is never touched. The
+				// leftover/unassigned changes then remain as working changes automatically
+				// (worktree − newTip), so there is no stash, no pop, and no merge. This eliminates the
+				// whole class of spurious stash-pop conflicts and never destroys uncommitted work,
+				// including concurrent edits made while the commits were being generated.
+				await svc.ops?.reset(shas.at(-1)!, { mode: 'mixed' });
 			}
 
 			// Clear the committing state and close the composer webview first
