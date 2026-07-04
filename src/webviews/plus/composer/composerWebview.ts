@@ -1728,7 +1728,13 @@ export class ComposerWebviewProvider implements WebviewProvider<State, State, Co
 				const untrackedPaths = (await repo.git.status?.getUntrackedFiles())?.map(f => f.path);
 				if (untrackedPaths?.length) {
 					try {
-						diffsWithUntracked = await getComposerDiffs(repo);
+						// Must include untracked files here so the recomputed safety diffs match the
+						// open-time capture (initializeStateAndContextFromWorkingDirectory also opens
+						// with `{ includeUntracked: true }`). Recomputing without them leaves the
+						// untracked hunks out of the unstaged diff, so the hash never matches and the
+						// safety check aborts with "Unstaged changes have been modified since composer
+						// opened" — dropping the commit entirely.
+						diffsWithUntracked = await getComposerDiffs(repo, undefined, { includeUntracked: true });
 						await repo.git.staging?.stageFiles(untrackedPaths);
 					} catch {}
 				}
